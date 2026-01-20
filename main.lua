@@ -13,52 +13,30 @@ local GITHUB_USER = "mn7717306-lgtm"
 local GITHUB_REPO = "CODE-REFINER-PRO"
 local GITHUB_BRANCH = "main"
 local CURRENT_VERSION = "1.0.1"
+local PLUGIN_PATH = "/storage/emulated/0/解说/Plugins/Code Refiner Pro/main.lua"
 local VERSION_URL = "https://raw.githubusercontent.com/"..GITHUB_USER.."/"..GITHUB_REPO.."/"..GITHUB_BRANCH.."/version.txt"
 local CODE_URL = "https://raw.githubusercontent.com/"..GITHUB_USER.."/"..GITHUB_REPO.."/"..GITHUB_BRANCH.."/main.lua"
 local context = this 
-local PLUGIN_DIR = "/storage/emulated/0/解说/Plugins/Code Refiner Pro/"
-local CURRENT_FILE_PATH = PLUGIN_DIR .. "main.lua"
-local BACKUP_FILE_PATH = PLUGIN_DIR .. "main.lua.backup"
 local savePath = Environment.getExternalStorageDirectory().toString() .. "/CodeStudio_Notes/"
 if not File(savePath).exists() then File(savePath).mkdirs() end
-if not File(PLUGIN_DIR).exists() then File(PLUGIN_DIR).mkdirs() end
-local function silentAutoUpdate()
+local function checkAndUpdate()
  Thread(Runnable{
  run = function()
  pcall(function()
  local url = java.net.URL(VERSION_URL)
  local conn = url.openConnection()
- conn.setConnectTimeout(5000)
- conn.setReadTimeout(5000)
+ conn.setConnectTimeout(3000)
+ conn.setReadTimeout(3000)
  local input = conn.getInputStream()
  local reader = BufferedReader(InputStreamReader(input))
  local newVersion = reader.readLine()
  reader.close()
- 
  if newVersion and newVersion ~= CURRENT_VERSION then
  local codeUrl = java.net.URL(CODE_URL)
  local codeConn = codeUrl.openConnection()
- codeConn.setConnectTimeout(10000)
- codeConn.setReadTimeout(10000)
+ codeConn.setConnectTimeout(5000)
+ codeConn.setReadTimeout(5000)
  local codeInput = codeConn.getInputStream()
- 
- local currentFile = File(CURRENT_FILE_PATH)
- local backupFile = File(BACKUP_FILE_PATH)
- 
- if currentFile.exists() then
- local currentContent = ""
- local f = io.open(currentFile.getPath(), "r")
- if f then
- currentContent = f:read("*a")
- f:close()
- end
- 
- local bf = io.open(backupFile.getPath(), "w")
- if bf then
- bf:write(currentContent)
- bf:close()
- end
- end
  
  local codeReader = BufferedReader(InputStreamReader(codeInput))
  local newCode = ""
@@ -69,17 +47,45 @@ local function silentAutoUpdate()
  end
  codeReader.close()
  
- local newFile = io.open(currentFile.getPath(), "w")
+ local currentFile = File(PLUGIN_PATH)
+ local backupPath = PLUGIN_PATH .. ".backup"
+ 
+ if currentFile.exists() then
+ local currentContent = ""
+ local f = io.open(currentFile.getPath(), "r")
+ if f then
+ currentContent = f:read("*a")
+ f:close()
+ end
+ 
+ local bf = io.open(backupPath, "w")
+ if bf then
+ bf:write(currentContent)
+ bf:close()
+ end
+ end
+ 
+ local newFile = io.open(PLUGIN_PATH, "w")
  if newFile then
  newFile:write(newCode)
  newFile:close()
+ 
+ local handler = Handler(Looper.getMainLooper())
+ handler.post(Runnable{
+ run = function()
+ if mainDlg then
+ mainDlg.hide()
+ end
+ Toast.makeText(context, "Update complete. Please restart plugin.", Toast.LENGTH_LONG).show()
+ end
+ })
  end
  end
  end)
  end
  }).start()
 end
-silentAutoUpdate()
+checkAndUpdate()
 pcall(function()
  local builder = StrictMode.VmPolicy.Builder()
  StrictMode.setVmPolicy(builder.build())
@@ -235,7 +241,7 @@ function extractFunctions(text)
  return functions
 end
 function findErrorLocation(errorMsg, code)
- if not errorMsg or errorMsg == "" then return "No error message provided" end
+ if not errorMsg or errorMsg == "" then return "No error message" end
  if not code or code == "" then return "No code provided" end
  
  local lines = {}
@@ -254,11 +260,11 @@ function findErrorLocation(errorMsg, code)
  
  for i=1, #lines do
  if errorMsg:find("line%s+"..i) or errorMsg:find(":%s*"..i.."%s*:") or errorMsg:find("Line%s+"..i) then
- return "Error at line "..i..": "..(lines[i] or "empty line")
+ return "Error at line "..i..": "..(lines[i] or "empty")
  end
  end
  
- return "Error location not found in code"
+ return "Error location not found"
 end
 function textReader()
  local mainInput = tostring(editor.getText())
@@ -371,9 +377,9 @@ function textReader()
  return btn
  end
  
- modeBtnRow.addView(createModeButton("Lines Mode", "Lines"))
- modeBtnRow.addView(createModeButton("Words Mode", "Words"))
- modeBtnRow.addView(createModeButton("Chars Mode", "Characters"))
+ modeBtnRow.addView(createModeButton("Lines", "Lines"))
+ modeBtnRow.addView(createModeButton("Words", "Words"))
+ modeBtnRow.addView(createModeButton("Chars", "Characters"))
  modeBtnRow.addView(createModeButton("Paragraphs", "Paragraphs"))
  modeBtnRow.addView(createModeButton("Functions", "Functions"))
  
@@ -396,7 +402,7 @@ function textReader()
  selectedIndices = {}
  if isMultiSelect then
  list.setChoiceMode(ListView.CHOICE_MODE_MULTIPLE)
- notify("Multi selection enabled. Check items to select.")
+ notify("Multi selection enabled")
  else
  list.setChoiceMode(ListView.CHOICE_MODE_NONE)
  notify("Multi selection disabled")
@@ -426,7 +432,7 @@ function textReader()
  end)
  
  local lineEdit = EditText(context)
- lineEdit.setHint("Enter line number")
+ lineEdit.setHint("Line number")
  lineEdit.setInputType(2)
  
  local goBtn = Button(context)
@@ -459,7 +465,7 @@ function textReader()
  searchLayout.setOrientation(1)
  
  local searchEdit = EditText(context)
- searchEdit.setHint("Enter search text")
+ searchEdit.setHint("Search text")
  
  local resultList = ListView(context)
  
@@ -477,7 +483,7 @@ function textReader()
  end
  
  if #results == 0 then
- resultList.setAdapter(ArrayAdapter(context, android.R.layout.simple_list_item_1, {"No results found"}))
+ resultList.setAdapter(ArrayAdapter(context, android.R.layout.simple_list_item_1, {"No results"}))
  else
  resultList.setAdapter(ArrayAdapter(context, android.R.layout.simple_list_item_1, results))
  
@@ -556,7 +562,7 @@ function textReader()
  local readerDlg = LuaDialog(context)
  readerDlg.setTitle("Advanced Text Reader")
  readerDlg.setView(readerLayout)
- readerDlg.setNegativeButton("Close Reader", nil)
+ readerDlg.setNegativeButton("Close", nil)
  readerDlg.show()
  
  local function handleItemClick(i)
@@ -603,7 +609,7 @@ function textReader()
  
  addActionBtn("Copy", function()
  context.getSystemService(Context.CLIPBOARD_SERVICE).setText(tostring(editBox.getText()))
- notify("Copied to clipboard")
+ notify("Copied")
  end)
  
  addActionBtn("Delete", function()
@@ -670,7 +676,7 @@ function textReader()
  
  addOptionBtn("Copy Item", function()
  context.getSystemService(Context.CLIPBOARD_SERVICE).setText(tostring(currentItems[idx]))
- notify("Copied to clipboard")
+ notify("Copied")
  end)
  
  addOptionBtn("Delete Item", function()
@@ -700,40 +706,6 @@ function textReader()
  
  grid.onItemClick = function(a,v,i,j) handleItemClick(i) end
  grid.onItemLongClick = function(a,v,i,j) return handleItemLongClick(i) end
-end
-function shareFileWithProvider(filePath, fileName)
- local file = File(filePath)
- if not file.exists() then
- notify("File not found")
- return false
- end
- 
- local uri
- if Build.VERSION.SDK_INT >= 24 then
- local authority = context.getPackageName() .. ".fileprovider"
- uri = FileProvider.getUriForFile(context, authority, file)
- else
- uri = Uri.fromFile(file)
- end
- 
- local shareIntent = Intent(Intent.ACTION_SEND)
- shareIntent.setType("text/plain")
- shareIntent.putExtra(Intent.EXTRA_STREAM, uri)
- shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Code File: "..fileName)
- shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
- 
- try {
- function()
- context.startActivity(Intent.createChooser(shareIntent, "Share File"))
- return true
- end,
- catch {
- function(e)
- notify("Failed to share file: "..tostring(e))
- return false
- end
- }
- }
 end
 function manageFiles()
  local folder = File(savePath)
@@ -809,21 +781,27 @@ function manageFiles()
  end)
  
  addFileOption("Share as TX File", function()
+ local content = ""
+ local f = io.open(path, "r")
+ if f then content = f:read("*a") f:close() end
+ 
  local cacheDir = context.getCacheDir()
  local tempFile = File(cacheDir, fileObj.getName())
+ local tempOut = io.open(tempFile.getPath(), "w")
+ if tempOut then
+ tempOut:write(content)
+ tempOut:close()
  
- local source = io.open(path, "r")
- local dest = io.open(tempFile.getPath(), "w")
+ local uri = Uri.fromFile(tempFile)
+ local shareIntent = Intent(Intent.ACTION_SEND)
+ shareIntent.setType("text/plain")
+ shareIntent.putExtra(Intent.EXTRA_STREAM, uri)
+ shareIntent.putExtra(Intent.EXTRA_SUBJECT, "Code File: "..fileObj.getName())
+ shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
  
- if source and dest then
- local content = source:read("*a")
- dest:write(content)
- source:close()
- dest:close()
- 
- shareFileWithProvider(tempFile.getPath(), fileObj.getName())
+ context.startActivity(Intent.createChooser(shareIntent, "Share File"))
  else
- notify("Failed to prepare file for sharing")
+ notify("Failed to create share file")
  end
  end)
  
@@ -878,8 +856,7 @@ addB(r1, "SAVE", 0xFF1565C0, function()
  local n = tostring(inp.getText())
  if n == "" then n = "Code_"..os.time() end
  if not n:match("%.txt$") then n = n..".txt" end
- local filePath = savePath..n
- local fos = FileOutputStream(File(filePath))
+ local fos = FileOutputStream(File(savePath..n))
  fos.write(String(txt).getBytes())
  fos.close() 
  notify("Saved: "..n)
